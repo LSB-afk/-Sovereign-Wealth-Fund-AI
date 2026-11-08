@@ -1,0 +1,11 @@
+node_modules
+.next
+.env*
+!.env.example
+*.tsbuildinfo
+next-env.d.ts
+
+# Local agent state and OS files
+.omc/
+.omx/
+.DS_Store

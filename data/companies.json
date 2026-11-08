@@ -1,0 +1,410 @@
+{
+  "_note": "큐레이션 프로필. 제품·사업모델·최종시장 태그는 각 사 최근 연간보고서(10-K/20-F) Item 1(Business)의 정성 서술을 요약한 것으로, 수치를 포함하지 않는다. 판단 근거로 사용할 때는 공시 원문 발췌(get_filing_excerpt)와 함께 확인해야 한다. 작성일: 2026-11-07.",
+  "targets": [
+    "NVDA",
+    "AMD"
+  ],
+  "candidatePool": {
+    "NVDA": [
+      "AMD",
+      "INTC",
+      "AVGO",
+      "QCOM",
+      "MRVL",
+      "MU",
+      "TXN",
+      "ADI",
+      "ARM",
+      "TSM"
+    ],
+    "AMD": [
+      "NVDA",
+      "INTC",
+      "AVGO",
+      "QCOM",
+      "MRVL",
+      "MU",
+      "TXN",
+      "ADI",
+      "ARM",
+      "TSM"
+    ]
+  },
+  "poolRule": "미국 상장 반도체(SIC 3674 및 반도체 설계·라이선스 관련) 기업 중 SEC EDGAR에서 연간 공시를 확보할 수 있는 대형사. 초기 탐색 범위이며 적합한 Peer를 의미하지 않는다.",
+  "companies": [
+    {
+      "ticker": "NVDA",
+      "cik": 1045810,
+      "name": "NVIDIA Corporation",
+      "short": "GPU·가속 컴퓨팅",
+      "businessModel": "팹리스 (생산은 외부 파운드리 위탁)",
+      "businessModelTag": "fabless",
+      "summary": "데이터센터용 가속 컴퓨팅(GPU·시스템·네트워킹)과 게이밍·전문 시각화·자동차용 GPU/SoC 플랫폼. CUDA 등 소프트웨어 생태계를 함께 제공.",
+      "products": [
+        "데이터센터 GPU·가속 컴퓨팅 시스템",
+        "네트워킹(InfiniBand/Ethernet, DPU)",
+        "게이밍 GPU",
+        "전문 시각화 GPU",
+        "자동차 SoC·플랫폼"
+      ],
+      "productTags": [
+        "gpu_accelerator",
+        "networking",
+        "ai_platform_software",
+        "soc"
+      ],
+      "endMarkets": [
+        "data_center",
+        "gaming",
+        "pro_visualization",
+        "automotive"
+      ],
+      "customerTags": [
+        "hyperscaler_cloud",
+        "oem_odm",
+        "system_integrator",
+        "distributor"
+      ],
+      "aliases": [
+        "NVIDIA",
+        "Nvidia"
+      ]
+    },
+    {
+      "ticker": "AMD",
+      "cik": 2488,
+      "name": "Advanced Micro Devices, Inc.",
+      "short": "CPU·GPU",
+      "businessModel": "팹리스 (생산은 외부 파운드리 위탁)",
+      "businessModelTag": "fabless",
+      "summary": "서버·PC용 x86 CPU, 데이터센터 AI 가속기(GPU), 게이밍 GPU·세미커스텀 콘솔 SoC, 임베디드(FPGA·적응형 SoC).",
+      "products": [
+        "서버 CPU(EPYC)",
+        "데이터센터 AI 가속기(Instinct)",
+        "PC CPU(Ryzen)",
+        "게이밍 GPU·세미커스텀 SoC",
+        "FPGA·적응형 SoC(임베디드)"
+      ],
+      "productTags": [
+        "cpu",
+        "gpu_accelerator",
+        "fpga",
+        "soc",
+        "networking"
+      ],
+      "endMarkets": [
+        "data_center",
+        "client_pc",
+        "gaming",
+        "embedded"
+      ],
+      "customerTags": [
+        "hyperscaler_cloud",
+        "oem_odm",
+        "system_integrator",
+        "distributor"
+      ],
+      "aliases": [
+        "AMD",
+        "Advanced Micro Devices"
+      ]
+    },
+    {
+      "ticker": "INTC",
+      "cik": 50863,
+      "name": "Intel Corporation",
+      "short": "CPU·파운드리",
+      "businessModel": "종합반도체(IDM) + 파운드리 사업",
+      "businessModelTag": "idm_foundry",
+      "summary": "PC·서버용 x86 CPU를 자체 설계·생산하며, 외부 고객 대상 파운드리 사업을 병행. 자동차(ADAS) 자회사 보유.",
+      "products": [
+        "PC CPU",
+        "서버 CPU(Xeon)",
+        "AI 가속기",
+        "파운드리 서비스",
+        "ADAS(자회사)"
+      ],
+      "productTags": [
+        "cpu",
+        "gpu_accelerator",
+        "foundry",
+        "soc"
+      ],
+      "endMarkets": [
+        "client_pc",
+        "data_center",
+        "automotive"
+      ],
+      "customerTags": [
+        "oem_odm",
+        "hyperscaler_cloud",
+        "distributor"
+      ],
+      "aliases": [
+        "Intel"
+      ]
+    },
+    {
+      "ticker": "AVGO",
+      "cik": 1730168,
+      "name": "Broadcom Inc.",
+      "short": "네트워킹·맞춤형 AI칩",
+      "businessModel": "팹리스 반도체 + 인프라 소프트웨어",
+      "businessModelTag": "fabless",
+      "summary": "데이터센터 네트워킹·맞춤형 AI 가속기(ASIC)·광대역·무선·스토리지 반도체와 인프라 소프트웨어(VMware 등)를 함께 영위.",
+      "products": [
+        "맞춤형 AI 가속기(ASIC)",
+        "이더넷 스위치·네트워킹",
+        "광대역·무선(RF)",
+        "스토리지 연결",
+        "인프라 소프트웨어"
+      ],
+      "productTags": [
+        "custom_asic",
+        "networking",
+        "wireless_rf",
+        "infrastructure_software"
+      ],
+      "endMarkets": [
+        "data_center",
+        "mobile",
+        "broadband",
+        "enterprise_software"
+      ],
+      "customerTags": [
+        "hyperscaler_cloud",
+        "oem_odm",
+        "consumer_device_maker",
+        "enterprise"
+      ],
+      "aliases": [
+        "Broadcom"
+      ]
+    },
+    {
+      "ticker": "QCOM",
+      "cik": 804328,
+      "name": "QUALCOMM Incorporated",
+      "short": "모바일 SoC",
+      "businessModel": "팹리스 반도체 + 기술 라이선스",
+      "businessModelTag": "fabless",
+      "summary": "스마트폰용 SoC·모뎀·RF 칩 판매(QCT)와 무선 표준필수특허 라이선스(QTL). 자동차·IoT·PC로 확장.",
+      "products": [
+        "모바일 SoC(Snapdragon)",
+        "모뎀·RF",
+        "자동차 플랫폼",
+        "IoT 칩",
+        "특허 라이선스"
+      ],
+      "productTags": [
+        "soc",
+        "modem_rf",
+        "ip_licensing",
+        "cpu"
+      ],
+      "endMarkets": [
+        "mobile",
+        "automotive",
+        "iot",
+        "client_pc"
+      ],
+      "customerTags": [
+        "consumer_device_maker",
+        "oem_odm",
+        "automotive_oem"
+      ],
+      "aliases": [
+        "Qualcomm",
+        "QUALCOMM"
+      ]
+    },
+    {
+      "ticker": "MRVL",
+      "cik": 1835632,
+      "name": "Marvell Technology, Inc.",
+      "short": "데이터센터 ASIC·네트워킹",
+      "businessModel": "팹리스",
+      "businessModelTag": "fabless",
+      "summary": "데이터 인프라 반도체: 데이터센터용 맞춤형 ASIC, 전광(electro-optics) 인터커넥트, 스위치·PHY, 스토리지 컨트롤러.",
+      "products": [
+        "맞춤형 데이터센터 ASIC",
+        "전광 인터커넥트(DSP)",
+        "이더넷 스위치·PHY",
+        "스토리지 컨트롤러"
+      ],
+      "productTags": [
+        "custom_asic",
+        "networking",
+        "optical_interconnect",
+        "storage"
+      ],
+      "endMarkets": [
+        "data_center",
+        "enterprise_networking",
+        "carrier"
+      ],
+      "customerTags": [
+        "hyperscaler_cloud",
+        "oem_odm",
+        "distributor"
+      ],
+      "aliases": [
+        "Marvell"
+      ]
+    },
+    {
+      "ticker": "MU",
+      "cik": 723125,
+      "name": "Micron Technology, Inc.",
+      "short": "메모리",
+      "businessModel": "메모리 종합반도체(IDM)",
+      "businessModelTag": "idm",
+      "summary": "DRAM(HBM 포함)·NAND 메모리와 스토리지를 자체 생산·판매. 범용 메모리 가격 사이클의 영향을 크게 받음.",
+      "products": [
+        "DRAM·HBM",
+        "NAND",
+        "SSD"
+      ],
+      "productTags": [
+        "memory"
+      ],
+      "endMarkets": [
+        "data_center",
+        "client_pc",
+        "mobile",
+        "automotive"
+      ],
+      "customerTags": [
+        "hyperscaler_cloud",
+        "oem_odm",
+        "consumer_device_maker"
+      ],
+      "aliases": [
+        "Micron"
+      ]
+    },
+    {
+      "ticker": "TXN",
+      "cik": 97476,
+      "name": "Texas Instruments Incorporated",
+      "short": "아날로그",
+      "businessModel": "종합반도체(IDM)",
+      "businessModelTag": "idm",
+      "summary": "아날로그 반도체와 임베디드 프로세서를 자체 팹에서 생산. 산업·자동차 비중이 큼.",
+      "products": [
+        "아날로그(전력·신호처리)",
+        "임베디드 프로세서(MCU)"
+      ],
+      "productTags": [
+        "analog",
+        "embedded_processing"
+      ],
+      "endMarkets": [
+        "industrial",
+        "automotive",
+        "personal_electronics"
+      ],
+      "customerTags": [
+        "industrial",
+        "automotive_oem",
+        "distributor"
+      ],
+      "aliases": [
+        "Texas Instruments"
+      ]
+    },
+    {
+      "ticker": "ADI",
+      "cik": 6281,
+      "name": "Analog Devices, Inc.",
+      "short": "아날로그",
+      "businessModel": "종합반도체(IDM, 일부 외부 위탁)",
+      "businessModelTag": "idm",
+      "summary": "아날로그·혼성신호·전력관리 반도체. 산업·자동차·통신 시장 중심.",
+      "products": [
+        "데이터 변환기·앰프",
+        "전력관리 IC",
+        "혼성신호·센서"
+      ],
+      "productTags": [
+        "analog",
+        "mixed_signal",
+        "power"
+      ],
+      "endMarkets": [
+        "industrial",
+        "automotive",
+        "communications",
+        "consumer"
+      ],
+      "customerTags": [
+        "industrial",
+        "automotive_oem",
+        "distributor"
+      ],
+      "aliases": [
+        "Analog Devices"
+      ]
+    },
+    {
+      "ticker": "ARM",
+      "cik": 1973239,
+      "name": "Arm Holdings plc",
+      "short": "IP 라이선스",
+      "businessModel": "반도체 IP 라이선스·로열티",
+      "businessModelTag": "ip_licensing",
+      "summary": "CPU 아키텍처 및 IP를 반도체 기업에 라이선스하고 칩 출하량 기반 로열티를 수취. 외국 발행인(20-F 제출), US GAAP 적용.",
+      "products": [
+        "CPU IP 라이선스",
+        "로열티",
+        "컴퓨트 서브시스템"
+      ],
+      "productTags": [
+        "ip_licensing",
+        "cpu"
+      ],
+      "endMarkets": [
+        "mobile",
+        "data_center",
+        "automotive",
+        "iot"
+      ],
+      "customerTags": [
+        "semiconductor_company"
+      ],
+      "aliases": [
+        "Arm Holdings",
+        "Arm Limited"
+      ]
+    },
+    {
+      "ticker": "TSM",
+      "cik": 1046179,
+      "name": "Taiwan Semiconductor Manufacturing Company Limited",
+      "short": "파운드리(공급사)",
+      "businessModel": "순수 파운드리(위탁생산)",
+      "businessModelTag": "foundry",
+      "summary": "팹리스·IDM 고객의 칩을 위탁 생산. NVIDIA·AMD에는 경쟁사가 아니라 공급사에 해당. 외국 발행인(20-F), IFRS·신대만달러 보고.",
+      "products": [
+        "웨이퍼 위탁생산",
+        "첨단 패키징"
+      ],
+      "productTags": [
+        "foundry"
+      ],
+      "endMarkets": [
+        "hpc",
+        "mobile",
+        "iot",
+        "automotive"
+      ],
+      "customerTags": [
+        "semiconductor_company"
+      ],
+      "aliases": [
+        "TSMC",
+        "Taiwan Semiconductor"
+      ]
+    }
+  ]
+}

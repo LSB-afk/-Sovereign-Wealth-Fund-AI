@@ -2,6 +2,7 @@
 import { fmtPct, fmtUsdB, median } from './financials.ts';
 import { SCORING } from './peer.ts';
 import { assessmentLabel, criterionLabel, decisionLabel, relationshipLabel } from './labels.ts';
+import { assertPublishablePeers } from './publication.ts';
 import type { AnalysisResult, CandidateRecord, CriterionKey, MetricKey } from './types.ts';
 
 export interface PeerChange { ticker: string; action: 'add' | 'remove'; at: string }
@@ -16,6 +17,7 @@ export interface Row {
   operatingMargin: number | null;
   rndRatio: number | null;
   src: Partial<Record<MetricKey, string>>; // sourceId per metric
+  derivedSrc?: { revenueGrowth: string[]; operatingMargin: string[]; rndRatio: string[] };
 }
 
 function row(c: CandidateRecord, role: Row['role']): Row {
@@ -26,10 +28,16 @@ function row(c: CandidateRecord, role: Row['role']): Row {
     revenue: v.revenue?.value ?? null, revenueGrowth: f?.revenueGrowth ?? null,
     operatingIncome: v.operatingIncome?.value ?? null, operatingMargin: f?.operatingMargin ?? null, rndRatio: f?.rndRatio ?? null,
     src: { revenue: v.revenue?.sourceId, operatingIncome: v.operatingIncome?.sourceId, rnd: v.rnd?.sourceId },
+    derivedSrc: {
+      revenueGrowth: [v.revenue?.sourceId, f?.prior?.values.revenue?.sourceId].filter((s): s is string => !!s),
+      operatingMargin: [v.operatingIncome?.sourceId, v.revenue?.sourceId].filter((s): s is string => !!s),
+      rndRatio: [v.rnd?.sourceId, v.revenue?.sourceId].filter((s): s is string => !!s),
+    },
   };
 }
 
 export function comparisonRows(r: AnalysisResult, peers: string[]): Row[] {
+  assertPublishablePeers(r, peers);
   const peerRows = peers.map((t) => r.candidates.find((c) => c.ticker === t)).filter(Boolean).map((c) => row(c!, 'Peer'));
   const med = (k: keyof Row) => median(peerRows.map((x) => x[k] as number | null));
   return [
@@ -47,6 +55,8 @@ export function toMarkdown(r: AnalysisResult, peers: string[], changes: PeerChan
   const rows = comparisonRows(r, peers);
   L.push(`# Peer Group 분석 보고서 — ${r.target}`, '');
   L.push(`- 실행 모드: **${r.modeLabel}**`, `- 분석 기준일: ${r.asOf} (이후 공시 제외)`, `- 실행: ${r.startedAt} ~ ${r.finishedAt}`, `- 상태: ${r.status}${r.stopReason ? ` — ${r.stopReason}` : ''}`, `- 데이터: ${r.dataNote}`, '');
+  L.push(`- 실행 기록: ${r.runId ?? '미저장'}`, `- 게시 검사: ${r.reliability.policyVersion} / ${r.reliability.status} / 검사 미통과·미검토 ${r.reliability.held}개`, '- 본 문서는 리서치 제안입니다. 제품·시장·관계 분류는 큐레이션과 규칙 기반 추론이며 사람의 검토가 필요합니다. 원본 실행의 승인 여부는 서비스 기록에서 확인합니다.', '');
+  for (const check of r.reliability.checks) L.push(`- [${check.code}] ${check.ticker ?? ''}: ${check.message}`);
   L.push('## 요약', '', r.summary || '-', '');
   if (changes.length) {
     L.push('## 사용자 변경 사항 (에이전트 제안과 다름)', '', `에이전트 제안: ${r.selected.join(', ') || '없음'}`, '');
@@ -73,7 +83,7 @@ export function toMarkdown(r: AnalysisResult, peers: string[], changes: PeerChan
   for (const c of r.candidates.filter((c) => !peers.includes(c.ticker))) L.push(`- **${c.ticker}** (${c.review ? decisionLabel[c.review.decision] : '미검토'}): ${c.review?.reason ?? '검토되지 않음'}`);
   L.push('', '## 재무지표 비교 (최근 연간, 연결, USD)', '');
   L.push('| 티커 | 구분 | 회계기간 | 매출 | 매출 성장률 | 영업이익 | 영업이익률 | R&D 비중 |', '|---|---|---|---|---|---|---|---|');
-  for (const x of rows) L.push(`| ${x.ticker} | ${x.role} | ${x.period} | ${fmtUsdB(x.revenue)}${src(x.src.revenue)} | ${fmtPct(x.revenueGrowth)} | ${fmtUsdB(x.operatingIncome)}${src(x.src.operatingIncome)} | ${fmtPct(x.operatingMargin)} | ${fmtPct(x.rndRatio)}${src(x.src.rnd)} |`);
+  for (const x of rows) L.push(`| ${x.ticker} | ${x.role} | ${x.period} | ${fmtUsdB(x.revenue)}${src(x.src.revenue)} | ${fmtPct(x.revenueGrowth)}${src(x.derivedSrc?.revenueGrowth.join(', '))} | ${fmtUsdB(x.operatingIncome)}${src(x.src.operatingIncome)} | ${fmtPct(x.operatingMargin)}${src(x.derivedSrc?.operatingMargin.join(', '))} | ${fmtPct(x.rndRatio)}${src(x.derivedSrc?.rndRatio.join(', '))} |`);
   L.push('', '성장률·이익률·R&D 비중은 공시 원값으로 코드에서 계산. 성장률 = (당기 매출 − 전기 매출) / 전기 매출. 누락 값은 추정하지 않음.', '');
   L.push('## 데이터 누락 및 비교 시 유의사항', '');
   for (const c of [r.target_record, ...r.candidates]) {
@@ -99,6 +109,7 @@ const csvCell = (v: unknown) => {
 
 // One line per raw value with full provenance + derived ratios per company.
 export function toCsv(r: AnalysisResult, peers: string[]): string {
+  assertPublishablePeers(r, peers);
   const head = ['ticker', 'role', 'metric', 'value', 'unit', 'definition', 'xbrl_concept', 'period_start', 'period_end', 'form', 'filed', 'accession', 'source_id', 'source_url', 'collected_at'];
   const out = [head.join(',')];
   const companies = [{ c: r.target_record, role: 'target' }, ...peers.map((t) => ({ c: r.candidates.find((x) => x.ticker === t)!, role: 'peer' }))];
@@ -108,8 +119,12 @@ export function toCsv(r: AnalysisResult, peers: string[]): string {
       out.push([c.ticker, role, v!.metric, v!.value, v!.unit, v!.definition, v!.concept, v!.periodStart, v!.periodEnd, v!.form, v!.filed, v!.accn, v!.sourceId, v!.url, v!.collectedAt].map(csvCell).join(','));
     }
     const rev = f?.latest?.values.revenue;
-    for (const [metric, val] of [['revenue_growth_yoy', f?.revenueGrowth], ['operating_margin', f?.operatingMargin], ['rnd_to_revenue', f?.rndRatio]] as const) {
-      out.push([c.ticker, role, metric, val ?? 'MISSING', 'ratio', '코드 계산', '', rev?.periodStart, rev?.periodEnd, '', '', '', '', '', ''].map(csvCell).join(','));
+    for (const [metric, val, definition, inputs] of [
+      ['revenue_growth_yoy', f?.revenueGrowth, '(current_revenue - prior_revenue) / prior_revenue', [rev, f?.prior?.values.revenue]],
+      ['operating_margin', f?.operatingMargin, 'operating_income / revenue', [f?.latest?.values.operatingIncome, rev]],
+      ['rnd_to_revenue', f?.rndRatio, 'rnd / revenue', [f?.latest?.values.rnd, rev]],
+    ] as const) {
+      out.push([c.ticker, role, metric, val ?? 'MISSING', 'ratio', `코드 계산: ${definition}`, '', rev?.periodStart, rev?.periodEnd, '', '', '', [...new Set(inputs.flatMap((v) => v?.sourceId ? [v.sourceId] : []))].join(';'), [...new Set(inputs.flatMap((v) => v?.url ? [v.url] : []))].join(';'), inputs.map((v) => v?.collectedAt ?? '').join(';')].map(csvCell).join(','));
     }
   }
   return out.join('\n');

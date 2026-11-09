@@ -4,6 +4,9 @@ import type { CriterionKey, Financials, Issue, Profile, RuleScore } from './type
 
 export function checkComparability(target: Financials, cand: Financials, candProfile?: Profile, form?: string): Issue[] {
   const issues: Issue[] = [];
+  if (!target.latest?.values.revenue || target.operatingMargin == null || target.revenueGrowth == null) {
+    issues.push({ level: 'block', code: 'target_missing_metrics', message: '대상 기업의 매출·성장률·영업이익률 자료가 부족해 비교할 수 없음' });
+  }
   for (const n of cand.notes) if (n.startsWith('US GAAP') || n.startsWith('기준일')) issues.push({ level: 'block', code: 'no_usgaap_data', message: n });
   if (!issues.length && !cand.latest?.values.revenue) issues.push({ level: 'block', code: 'missing_revenue', message: '최근 연간 매출 누락' });
   if (cand.latest && !cand.latest.values.operatingIncome) issues.push({ level: 'warn', code: 'missing_operating_income', message: '영업이익 누락 → 영업이익률 비교 불가' });
@@ -40,8 +43,8 @@ export const SCORING = {
     '매출 구성·고객군(20%): 최종시장·고객 태그 자카드 유사도',
     '기업 규모(15%): 매출 배수 0.33~3배 = 1, 0.1~10배 = 0.5, 그 외 0',
     '성장성·수익성(15%): 1 − (|성장률 차이| + |영업이익률 차이|), 0~1로 제한 (차이 합 100%p 이상이면 0)',
-    '자료 충분성(15%): 차단 이슈 있으면 0(자동 제외), 경고 있으면 0.5, 없으면 1',
-    '선정: 차단 이슈 없음 + 점수 0.45 이상 상위 최대 5개. 3개 미만이면 경고 표시',
+    '자료 충분성(15%): 차단 이슈 있으면 0, 핵심 지표 누락 경고가 있으면 0.5, 그 외 1. 회계기간 차이 등 다른 경고는 별도 검토',
+    '선정 게시: 차단 이슈 없음 + 자료 충분성 1 + 점수 0.45 이상 상위 최대 5개 + 출처 검사 통과. 3개 미만이면 경고 표시',
   ],
 };
 

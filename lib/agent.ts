@@ -7,9 +7,10 @@ import { computeFinancials, fmtPct, fmtUsdB } from './financials.ts';
 import { companies, profileOf, type DataSource } from './datasource.ts';
 import { assess, checkComparability, ruleScore, scaleRatio, SCORING } from './peer.ts';
 import { criterionLabel, decisionLabel, relationshipLabel } from './labels.ts';
+import { isDate, schemaError } from './validation.ts';
 import type {
   AgentEvent, AnalysisResult, AnnualFiling, CandidateRecord, CriterionJudgment, CriterionKey, Decision, Limits, Mode,
-  Relationship, Review, Source, Stage, ToolLogEntry,
+  EvidenceCheck, Relationship, Review, ReviewInput, Source, Stage, ToolLogEntry,
 } from './types.ts';
 
 export const DEFAULT_LIMITS: Record<Mode, Limits> = {
@@ -32,6 +33,7 @@ export class Ctx {
     this.target = target;
     this.asOf = asOf;
     this.ds = ds;
+    if (!isDate(asOf) || asOf > new Date().toISOString().slice(0, 10)) throw new ToolInputError('유효한 과거/오늘 기준일이 필요합니다.');
     const pool = companies().candidatePool[target];
     if (!pool) throw new ToolInputError(`지원하지 않는 분석 대상: ${target}`);
     this.pool = pool;
@@ -56,7 +58,14 @@ export class Ctx {
     const r = this.rec(t);
     if (r.financials) return r.financials;
     const { facts, collectedAt } = await this.ds.facts(t);
-    const f = computeFinancials(t, facts, this.asOf, collectedAt);
+    if (Number(facts.cik) !== profileOf(t)?.cik) throw new ToolInputError(`${t}: 기업 식별자(CIK)가 다른 재무자료는 사용할 수 없습니다.`);
+    const f = computeFinancials(t, { ...facts, cik: Number(facts.cik) }, this.asOf, collectedAt);
+    for (const pv of [f.latest, f.prior]) for (const v of Object.values(pv?.values ?? {})) {
+      if (!Number.isFinite(v!.value) || !isDate(v!.filed) || !isDate(v!.periodStart) || !isDate(v!.periodEnd)
+        || v!.filed > this.asOf || v!.periodEnd > v!.filed || !/^\d{10}-\d{2}-\d{6}$/.test(v!.accn)) {
+        throw new ToolInputError(`${t}: 재무 원값의 수치·기간·공시 식별자 검증에 실패했습니다.`);
+      }
+    }
     for (const pv of [f.latest, f.prior]) {
       for (const v of Object.values(pv?.values ?? {})) {
         v!.sourceId = this.addSource({ ticker: t, kind: 'xbrl', title: `${t} ${v!.form} (${v!.filed} 공시) XBRL 재무데이터`, url: v!.url, form: v!.form, filed: v!.filed, period: `${v!.periodStart}~${v!.periodEnd}`, accessedAt: collectedAt });
@@ -183,7 +192,7 @@ export const TOOLS: ToolDef[] = [
   },
   {
     name: 'save_review', stage: 'review',
-    description: '후보 1개에 대한 검토 결과를 저장한다. 기준별 판단과 근거 sourceId(도구 결과에 있던 것만 유효)를 포함해야 한다. 차단 이슈가 있는 후보는 selected로 저장할 수 없다.',
+    description: '후보의 선정 제안을 근거 검사에 제출한다. 기준별 출처는 대상/후보 기업의 자료만 허용한다. 숫자 불일치, 검사 생략, 부족한 근거는 보류된다. 자유 작성 설명과 assessment는 게시하지 않고 코드가 데이터로 구성한다. 결과의 verification/checks를 읽고 추가 수집 후 다시 제출할 수 있다.',
     input_schema: obj({
       ticker: tickerProp,
       decision: { type: 'string', enum: ['selected', 'excluded', 'hold'] },
@@ -198,29 +207,67 @@ export const TOOLS: ToolDef[] = [
   },
 ];
 
-export function saveReview(ctx: Ctx, input: Omit<Review, 'author' | 'warnings'>, author: Review['author']) {
+export function saveReview(ctx: Ctx, input: ReviewInput, author: Review['author']) {
+  const error = schemaError(TOOLS.find((t) => t.name === 'save_review')!.input_schema, input);
+  if (error) throw new ToolInputError(error);
   const { ticker, decision } = input;
   if (ticker === ctx.target || !ctx.pool.includes(ticker)) throw new ToolInputError(`후보군에 없는 티커: ${ticker}`);
   const r = ctx.rec(ticker);
-  if (decision === 'selected' && r.issues?.some((i) => i.level === 'block')) throw new ToolInputError(`${ticker}는 비교 불가(차단) 이슈가 있어 selected로 저장할 수 없음: ${r.issues.find((i) => i.level === 'block')!.message}`);
-  if (decision === 'selected' && !r.financials) throw new ToolInputError(`${ticker} 재무자료를 먼저 조회해야 선정할 수 있음 (get_financials)`);
-  const known = new Set(ctx.sources.map((s) => s.id));
-  const warnings: string[] = [];
-  const keep = (ids: string[]) => {
-    const bad = ids.filter((i) => !known.has(i));
-    if (bad.length) warnings.push(`존재하지 않는 출처 ID 제거: ${bad.join(', ')}`);
-    return ids.filter((i) => known.has(i));
+  const checks: EvidenceCheck[] = [];
+  const fail = (code: string, message: string) => {
+    if (!checks.some((c) => c.code === code)) checks.push({ code, message, ticker });
   };
-  const criteria = Object.fromEntries(Object.entries(input.criteria).map(([k, c]) => [k, { ...c, sourceIds: keep(c.sourceIds) }])) as Record<CriterionKey, CriterionJudgment>;
-  const sourceIds = keep(input.sourceIds);
-  if (decision === 'selected' && !sourceIds.length && !Object.values(criteria).some((c) => c.sourceIds.length)) throw new ToolInputError('선정 근거에 유효한 출처 ID(S#)가 최소 1개 필요');
-  if (author === 'llm') {
-    const texts = [input.reason, ...Object.values(criteria).map((c) => c.note)].join(' ');
-    const bad = unverifiedNumbers(texts, knownNumbers(ctx, ticker));
-    if (bad.length) warnings.push(`도구 결과와 일치하지 않는 숫자 표현: ${bad.join(', ')} — 원문·비교표로 확인 필요`);
+  if (decision === 'hold') fail('agent_abstained', '에이전트가 판단을 보류했습니다. 추가 자료 또는 재검토가 필요합니다.');
+  const validIds = new Set<string>();
+  for (const id of [...input.sourceIds, ...Object.values(input.criteria).flatMap((c) => c.sourceIds)]) {
+    const s = ctx.sources.find((s) => s.id === id);
+    if (!s) { fail('unknown_source', '등록되지 않은 출처가 있어 제안을 보류했습니다.'); continue; }
+    if (![ctx.target, ticker].includes(s.ticker)) { fail('source_scope', '다른 기업의 출처는 이 후보의 판단 근거로 사용할 수 없습니다.'); continue; }
+    if (!sourceValid(ctx, s)) { fail('invalid_source', '출처 URL·기업·공시일·원문 검증에 실패했습니다.'); continue; }
+    validIds.add(id);
   }
-  r.review = { ...input, criteria, sourceIds, author, warnings };
-  return { data: { saved: true, warnings }, summary: `${ticker} → ${decisionLabel[decision]}${warnings.length ? ` (경고 ${warnings.length})` : ''}` };
+  if (!r.issues || !r.ruleScore || !r.profile || !ctx.rec(ctx.target).profile || !r.financials || !ctx.rec(ctx.target).financials) {
+    fail('checks_missing', '대상/후보 프로필·재무자료·비교 가능성 검사를 먼저 완료해야 합니다.');
+  }
+  if (decision === 'selected') {
+    if (r.issues?.some((i) => i.level === 'block')) fail('comparison_blocked', '비교 불가 이슈가 있어 선정을 보류했습니다.');
+    if (!r.ruleScore || r.ruleScore.total < SCORING.selectThreshold || r.ruleScore.parts.dataSufficiency !== 1) fail('selection_policy', '자료 충분성 또는 공개된 선정 기준을 충족하지 않습니다.');
+    if ([...ctx.records.values()].filter((c) => c.ticker !== ticker && c.review?.decision === 'selected').length >= SCORING.maxPeers) fail('peer_limit', '선정 개수 상한을 초과해 제안을 보류했습니다.');
+    for (const [key, criterion] of Object.entries(input.criteria)) {
+      const citations = criterion.sourceIds.filter((id) => validIds.has(id)).map((id) => ctx.sources.find((s) => s.id === id)!);
+      const quantitative = ['scale', 'growthProfitability', 'dataSufficiency'].includes(key);
+      if (![ctx.target, ticker].every((t) => citations.some((s) => s.ticker === t && (quantitative ? s.kind === 'xbrl' : ['profile', 'filing_excerpt'].includes(s.kind))))) {
+        fail(`evidence_${key}`, `${criterionLabel[key as CriterionKey]}: 대상과 후보 각각의 ${quantitative ? '재무' : '사업'} 근거가 필요합니다.`);
+      }
+    }
+  }
+  if (author === 'llm') {
+    const bad = unverifiedNumbers([input.reason, ...Object.values(input.criteria).map((c) => c.note)].join(' '), knownNumbers(ctx, ticker));
+    if (bad.length) fail('unverified_number', '도구 값과 일치하지 않는 숫자가 있어 제안을 보류했습니다. 해당 문장은 게시하지 않았습니다.');
+  }
+  // Publication boundary: model prose/assessments/relationship never cross it. Only code-built descriptions do.
+  const published = ruleReview(ctx, ticker, decision === 'selected');
+  published.decision = checks.length ? 'hold' : decision;
+  if (checks.length) published.reason = '근거 검사 미통과로 판단을 보류했습니다. 추가 자료 수집 또는 검토가 필요합니다.';
+  else if (decision === 'excluded' && r.ruleScore && !r.issues?.some((i) => i.level === 'block') && r.ruleScore.total >= SCORING.selectThreshold) published.reason = `참고 점수 ${r.ruleScore.total}. 에이전트가 제외를 제안했습니다. 규칙 기준과 경제적 적합성은 별도 검토해야 합니다.`;
+  // Remove any invalid underlying citation as well, including sources not supplied by the model.
+  const keep = (ids: string[]) => ids.filter((id) => { const s = ctx.sources.find((s) => s.id === id); return s && sourceValid(ctx, s) && [ctx.target, ticker].includes(s.ticker); });
+  published.sourceIds = keep(published.sourceIds);
+  for (const criterion of Object.values(published.criteria)) criterion.sourceIds = keep(criterion.sourceIds);
+  const warnings = checks.map((c) => c.message);
+  r.review = { ...published, author, warnings, verification: { status: checks.length ? 'held' : 'passed', checks } };
+  return { data: { saved: true, decision: r.review.decision, verification: r.review.verification, warnings }, summary: `${ticker} → ${decisionLabel[r.review.decision]}${checks.length ? ` (검사 미통과 ${checks.length})` : ' (게시 검사 통과)'}` };
+}
+
+function sourceValid(ctx: Ctx, source: Source): boolean {
+  if (!isDate(source.filed) || source.filed > ctx.asOf) return false;
+  const profile = profileOf(source.ticker);
+  if (!profile) return false;
+  try {
+    const url = new URL(source.url);
+    if (url.origin !== 'https://www.sec.gov' || url.username || url.password || !url.pathname.startsWith(`/Archives/edgar/data/${profile.cik}/`)) return false;
+  } catch { return false; }
+  return source.kind !== 'filing_excerpt' || !!source.quote?.some((q) => q.trim().length > 0);
 }
 
 
@@ -241,9 +288,9 @@ function knownNumbers(ctx: Ctx, ticker: string) {
 
 export function unverifiedNumbers(text: string, k: { pct: number[]; usdB: number[]; ratios: number[] }): string[] {
   const out: string[] = [];
-  const near = (x: number, list: number[], tol: (v: number) => number) => list.some((v) => Math.abs(Math.abs(v) - Math.abs(x)) <= tol(v));
+  const near = (x: number, list: number[], tol: (v: number) => number) => list.some((v) => Math.sign(v) === Math.sign(x) && Math.abs(v - x) <= tol(v));
   for (const m of text.matchAll(/(-?\d+(?:\.\d+)?)\s*%(?!p)/g)) if (!near(+m[1], k.pct, () => 0.6)) out.push(m[0]);
-  for (const m of text.matchAll(/\$\s?(\d+(?:\.\d+)?)\s*(B|bn|billion)\b/gi)) if (!near(+m[1], k.usdB, (v) => Math.abs(v) * 0.01 + 0.06)) out.push(m[0]);
+  for (const m of text.matchAll(/(-?)\$\s?(\d+(?:\.\d+)?)\s*(B|bn|billion)\b/gi)) if (!near(Number(`${m[1]}${m[2]}`), k.usdB, (v) => Math.abs(v) * 0.01 + 0.06)) out.push(m[0]);
   for (const m of text.matchAll(/(\d+(?:\.\d+)?)\s*배/g)) if (!near(+m[1], k.ratios, (v) => v * 0.05 + 0.06)) out.push(m[0]);
   return out;
 }
@@ -265,6 +312,9 @@ async function execTool(ctx: Ctx, call: ToolCall, maxRetries: number): Promise<{
   while (def && attempts <= maxRetries) {
     attempts++;
     try {
+      const error = schemaError(def.input_schema, call.input);
+      if (error) throw new ToolInputError(error);
+      if (call.name === 'list_candidates' && call.input.target !== ctx.target) throw new ToolInputError('분석 대상과 다른 후보군을 조회할 수 없습니다.');
       const { data, summary } = await def.run(ctx, call.input);
       return { result: { id: call.id, name: call.name, ok: true, content: JSON.stringify(data).slice(0, 14000) }, entry: { tool: call.name, args: call.input, ok: true, summary, attempts, ms: Date.now() - t0 } };
     } catch (e) {
@@ -285,7 +335,7 @@ export async function runAgent(opts: { target: string; asOf: string; mode: Mode;
   const toolLog: ToolLogEntry[] = [];
   const warnings: string[] = [];
   const stages = new Set<Stage>();
-  let toolCalls = 0, turns = 0, stopReason: string | undefined, summary = '';
+  let toolCalls = 0, turns = 0, stopReason: string | undefined;
   let results: ToolResult[] | null = null;
   const msLeft = () => limits.timeoutMs - (Date.now() - startedAt.getTime());
 
@@ -300,7 +350,7 @@ export async function runAgent(opts: { target: string; asOf: string; mode: Mode;
       stopReason = `판단 단계 실패: ${(e as Error).message}`;
       break;
     }
-    if ('done' in step) { summary = step.done; break; }
+    if ('done' in step) break; // Free model prose is intentionally withheld at the publication boundary.
     results = [];
     for (const call of step.calls) {
       if (toolCalls >= limits.maxToolCalls || msLeft() <= 0) {
@@ -324,6 +374,7 @@ export async function runAgent(opts: { target: string; asOf: string; mode: Mode;
 
   const candidates = ctx.pool.map((t) => ctx.rec(t));
   const unreviewed = candidates.filter((c) => !c.review).map((c) => c.ticker);
+  if (unreviewed.length) stopReason ??= '모든 후보의 검토를 완료하지 못했습니다.';
   if (unreviewed.length) warnings.push(`검토되지 않은 후보: ${unreviewed.join(', ')}`);
   const selected = candidates.filter((c) => c.review?.decision === 'selected').map((c) => c.ticker);
   if (selected.length < SCORING.minPeers) warnings.push(`근거가 충분한 Peer가 ${selected.length}개로 권장 최소(${SCORING.minPeers}개)보다 적음`);
@@ -333,12 +384,23 @@ export async function runAgent(opts: { target: string; asOf: string; mode: Mode;
   if (toolLog.some((e) => !e.ok)) warnings.push(`실패한 도구 호출 ${toolLog.filter((e) => !e.ok).length}건 (실행 로그 참조)`);
 
   const reviewed = candidates.length - unreviewed.length;
+  const checks: EvidenceCheck[] = candidates.flatMap((c) => c.review?.verification.checks ?? []);
+  const targetFinancials = ctx.rec(ctx.target).financials;
+  if (!targetFinancials?.latest?.values.revenue || targetFinancials.revenueGrowth == null || targetFinancials.operatingMargin == null) {
+    stopReason ??= '대상 기업의 필수 재무자료가 부족합니다.';
+    checks.push({ code: 'target_incomplete', ticker: ctx.target, message: '대상 기업의 매출·성장률·영업이익률을 확보하지 못했습니다.' });
+  }
+  for (const ticker of unreviewed) checks.push({ code: 'unreviewed', ticker, message: '후보 검토가 완료되지 않았습니다.' });
+  if (stopReason) checks.push({ code: 'incomplete_run', message: '실행이 중단되었거나 검토가 완료되지 않았습니다.' });
+  const held = candidates.filter((c) => c.review?.verification.status === 'held').length + unreviewed.length;
+  const summary = `${opts.mode === 'demo' ? '[데모 · LLM 미사용] ' : ''}${ctx.target} 후보 ${candidates.length}개 중 ${reviewed}개를 검토했습니다. 게시 검사에 통과한 선정 제안은 ${selected.length}개(${selected.join(', ') || '없음'})입니다. 검사 미통과·미검토 ${held}개. 숫자와 설명은 수집 데이터로 코드에서 구성했으며, 제품·시장 태그와 Peer 적합성은 사람의 검토가 필요합니다.`;
   const result: AnalysisResult = {
     mode: opts.mode, modeLabel: opts.modeLabel, target: opts.target, asOf: opts.asOf,
     startedAt: startedAt.toISOString(), finishedAt: new Date().toISOString(),
     status: !stopReason ? 'complete' : reviewed ? 'partial' : 'failed',
-    stopReason, summary: summary || (stopReason ? `실행이 중단되어 부분 결과만 제공합니다: ${stopReason}` : ''),
+    stopReason, summary,
     target_record: ctx.rec(opts.target), candidates, selected, sources: ctx.sources, toolLog, warnings, limits, dataNote: opts.dataNote,
+    reliability: { policyVersion: 'evidence-gate-v1', status: checks.length ? 'review_required' : 'passed', checks, held, published: reviewed - (held - unreviewed.length) },
   };
   emit({ type: 'stage', stage: 'report', status: 'done' });
   return result;
@@ -386,10 +448,10 @@ export class RulePolicy implements Policy {
   }
 }
 
-function ruleReview(ctx: Ctx, t: string, isSelected: boolean): Omit<Review, 'author' | 'warnings'> {
+function ruleReview(ctx: Ctx, t: string, isSelected: boolean): ReviewInput {
   const r = ctx.rec(t);
-  const tf = ctx.rec(ctx.target).financials!;
-  const p = r.profile!, f = r.financials, s = r.ruleScore;
+  const tf = ctx.rec(ctx.target).financials;
+  const p = r.profile ?? profileOf(t)!, f = r.financials, s = r.ruleScore;
   const profileSrc = ctx.sources.filter((x) => x.kind === 'profile' && (x.ticker === t || x.ticker === ctx.target)).map((x) => x.id);
   const xbrl = ctx.sources.filter((x) => x.kind === 'xbrl' && (x.ticker === t || x.ticker === ctx.target)).map((x) => x.id);
   const named = r.namedAsCompetitor ?? [];
@@ -397,12 +459,12 @@ function ruleReview(ctx: Ctx, t: string, isSelected: boolean): Omit<Review, 'aut
   const tp = profileOf(ctx.target)!;
 
   const j = (x: number | undefined, note: string, ids: string[]): CriterionJudgment => ({ assessment: x == null ? 'unknown' : assess(x), note, sourceIds: ids });
-  const ratio = f && scaleRatio(tf, f);
+  const ratio = f && tf && scaleRatio(tf, f);
   const criteria: Record<CriterionKey, CriterionJudgment> = {
-    product: j(s?.parts.product, `${p.businessModel}; 공통 제품 태그: ${p.productTags.filter((x) => tp.productTags.includes(x)).join(', ') || '없음'}${named.length ? '; 연간보고서 경쟁사 기술에 등장' : ''}`, [...profileSrc, ...named]),
-    customers: j(s?.parts.customers, `공통 최종시장·고객 태그: ${[...p.endMarkets, ...p.customerTags].filter((x) => [...tp.endMarkets, ...tp.customerTags].includes(x)).join(', ') || '없음'}`, profileSrc),
+    product: j(s?.parts.product, `[큐레이션 기반 추론] ${p.businessModel}; 공통 제품 태그: ${p.productTags.filter((x) => tp.productTags.includes(x)).join(', ') || '없음'}${named.length ? '; 경쟁 관련 발췌에 기업명 일치(의미 검토 필요)' : ''}`, [...profileSrc, ...named]),
+    customers: j(s?.parts.customers, `[큐레이션 기반 추론] 공통 최종시장·고객 태그: ${[...p.endMarkets, ...p.customerTags].filter((x) => [...tp.endMarkets, ...tp.customerTags].includes(x)).join(', ') || '없음'}`, profileSrc),
     scale: j(s?.parts.scale, ratio ? `매출 ${fmtUsdB(f!.latest!.values.revenue!.value)} (대상 대비 ${ratio.toFixed(2)}배)` : '매출 비교 불가', xbrl),
-    growthProfitability: j(s?.parts.growthProfitability, f?.latest ? `성장률 ${fmtPct(f.revenueGrowth)} vs ${fmtPct(tf.revenueGrowth)}, 영업이익률 ${fmtPct(f.operatingMargin)} vs ${fmtPct(tf.operatingMargin)}` : '자료 없음', xbrl),
+    growthProfitability: j(s?.parts.growthProfitability, f?.latest && tf ? `성장률 ${fmtPct(f.revenueGrowth)} vs ${fmtPct(tf.revenueGrowth)}, 영업이익률 ${fmtPct(f.operatingMargin)} vs ${fmtPct(tf.operatingMargin)}` : '자료 없음', xbrl),
     dataSufficiency: j(s?.parts.dataSufficiency ?? 0, (r.issues ?? []).filter((i) => i.level !== 'info').map((i) => i.message).join('; ') || '핵심 지표 확보', xbrl),
   };
   const business = named.length > 0 || (s ? s.parts.product >= 0.5 : false);
@@ -412,13 +474,13 @@ function ruleReview(ctx: Ctx, t: string, isSelected: boolean): Omit<Review, 'aut
   let decision: Decision, reason: string;
   if (block) {
     decision = 'excluded';
-    reason = `재무 비교 불가: ${block.message}.${p.businessModelTag === 'foundry' ? ' 사업상으로도 경쟁사가 아닌 공급사(파운드리) 관계.' : ''}`;
+    reason = `재무 비교 불가: ${block.message}.`;
   } else if (!s) {
     decision = 'hold';
     reason = '자료 수집 또는 비교 가능성 검사가 완료되지 않아 판단 보류 (실행 로그 참조)';
   } else if (isSelected) {
     decision = 'selected';
-    reason = `참고 점수 ${s!.total} (기준 ${SCORING.selectThreshold} 이상). ${relationshipLabel[relationship]}.${named.length ? ' 연간보고서 경쟁사 기술에 등장.' : ''}`;
+    reason = `참고 점수 ${s!.total} (기준 ${SCORING.selectThreshold} 이상). 관계 분류 제안: ${relationshipLabel[relationship]} (큐레이션·규칙 기반 추론).${named.length ? ' 경쟁 관련 발췌에 기업명 일치.' : ''}`;
   } else if (s && s.total >= SCORING.selectThreshold && s.parts.dataSufficiency < 1) {
     decision = 'hold';
     reason = `점수는 기준 이상이나 핵심 지표 누락으로 판단 보류: ${criteria.dataSufficiency.note}`;

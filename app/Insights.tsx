@@ -36,7 +36,7 @@ export function RobustView({ r, peers }: { r: AnalysisResult; peers: string[] })
             ))}
           </tbody>
         </table>
-        <p className="foot">방법: 다섯 기준의 가중치를 균등 분포(디리클레)에서 {n.toLocaleString()}번 뽑고, 선정 기준선도 0.40~0.50 사이에서 함께 바꿔 같은 선정 규칙(상위 최대 5개)을 다시 적용했습니다. 시드를 고정해 매번 같은 결과가 나옵니다. 기준별 점수는 공시 자료에서 계산한 값 그대로 씁니다.{r.mode === 'real' && ' 실제 모드의 최종 판단은 Claude가 했으므로, 이 결과는 규칙 점수 기준의 참고 지표입니다.'}</p>
+        <p className="foot">방법: 다섯 기준의 가중치를 균등 분포(디리클레)에서 {n.toLocaleString()}번 뽑고, 선정 기준선도 0.40~0.50 사이에서 함께 바꿔 같은 선정 규칙(상위 최대 5개)을 다시 적용했습니다. 시드를 고정해 매번 같은 결과가 나옵니다. 공시 수치와 큐레이션 태그로 계산한 기준별 점수를 사용합니다. 선정 빈도는 정확도·신뢰 확률이 아닙니다.{r.mode === 'real' && ' 실제 모드의 선정 제안은 Claude가 하며, 게시 여부는 코드가 검사합니다.'}</p>
       </div>
     </>
   );
@@ -65,7 +65,7 @@ export function TimelineView({ target, asOf, mode }: { target: string; asOf: str
   return (
     <>
       <div className="sheet">
-        <h3>시점별 Peer 변화 · {target} <span>각 시점에는 그날까지 공시된 자료만 사용 (미래 정보 누수 없음)</span></h3>
+        <h3>시점별 Peer 변화 · {target} <span>재무·공시는 각 기준일 이전 자료 · 제품·시장 태그는 현재 큐레이션</span></h3>
         <div className="scroll">
           <table className="matrix">
             <thead>
@@ -148,11 +148,12 @@ export function GraphView({ asOf, mode, focus }: { asOf: string; mode: Mode; foc
 
   return (
     <div className="kg">
+      {g.status === 'partial' && <div className="banner warn" role="status">일부 기업의 수집·추출에 실패한 부분 결과입니다. 수집 한계를 확인하세요.</div>}
       <div className="sheet kg-canvas">
-        <h3>공시 기반 지식그래프 <span>기준일 {g.asOf} · 추출 {g.extractor === 'llm' ? 'Claude(LLM) + 원문 대조 검증' : '규칙(데모, LLM 미사용)'}</span></h3>
+        <h3>공시 기반 관계 후보 <span>기준일 {g.asOf} · 추출 {g.extractor === 'llm' ? 'Claude(LLM) + 인용문 일치 검사' : '규칙(데모, LLM 미사용)'}</span></h3>
         <div className="kg-bar">
           <span className="stat">연간보고서 <b>{g.stats.filingsRead}</b>건 읽음</span>
-          <span className="stat">관계 <b>{g.stats.kept}</b>건 채택</span>
+          <span className="stat">관계 후보 <b>{g.stats.kept}</b>건 · 의미 검토 필요</span>
           <span className="stat">원문 대조 탈락 <b>{g.stats.rejected}</b>건</span>
           <span className="layers">
             <button className={layers.compete ? 'on c' : ''} onClick={() => setLayers({ ...layers, compete: !layers.compete })}>경쟁</button>
@@ -193,7 +194,7 @@ export function GraphView({ asOf, mode, focus }: { asOf: string; mode: Mode; foc
             );
           })}
         </svg>
-        <p className="foot">화살표 A → B = A의 연간보고서가 B를 해당 관계로 기재. 원 크기 = 다른 기업 보고서에서 경쟁사로 지목된 횟수. 노드를 누르면 근거 원문이 오른쪽에 보입니다.</p>
+        <p className="foot">화살표는 공시 발췌에서 추출한 관계 후보입니다. 인용문 일치는 관계의 의미·방향을 입증하지 않습니다. 모든 추출 관계는 사람의 검토가 필요합니다. 원 크기는 경쟁 관계 후보에 등장한 빈도입니다.</p>
       </div>
 
       <div className="sheet kg-side">
@@ -201,10 +202,10 @@ export function GraphView({ asOf, mode, focus }: { asOf: string; mode: Mode; foc
         {products.length > 0 && <div className="tagrow">{products.map((p) => <span key={p} className="tg">{p}</span>)}</div>}
         {markets.length > 0 && <div className="tagrow">{markets.map((p) => <span key={p} className="tg m">{p}</span>)}</div>}
         {products.length + markets.length > 0 && <p className="foot" style={{ marginTop: 4 }}>제품·시장 태그는 연간보고서 Item 1 기반 큐레이션</p>}
-        <h4>{label(sel)}이(가) 기재한 관계 · {out.length}</h4>
+        <h4>{label(sel)} 공시의 관계 후보 · {out.length}</h4>
         {out.length === 0 && <p className="muted small">없음</p>}
         {out.map((e, i) => <Evidence key={i} e={e} other={label(e.target)} dir="→" onPick={setSel} />)}
-        <h4>{label(sel)}을(를) 경쟁사로 기재한 기업 · {inc.length}</h4>
+        <h4>{label(sel)} 관련 경쟁 관계 후보 · {inc.length}</h4>
         {inc.length === 0 && <p className="muted small">없음</p>}
         {inc.map((e, i) => <Evidence key={i} e={e} other={label(e.source)} dir="←" onPick={setSel} />)}
         {g.notes.length > 0 && <><h4>수집 한계</h4><ul className="notes small">{g.notes.map((n) => <li key={n}>{n}</li>)}</ul></>}
@@ -220,7 +221,7 @@ function Evidence({ e, other, dir, onPick }: { e: KGEdge; other: string; dir: st
       <div className="ev-head">
         <button className="link" onClick={() => onPick(id)}>{dir} {other}</button>
         <span className={`rel ${e.relation === 'COMPETES_WITH' ? 'c' : 's'}`}>{relationLabel[e.relation]}</span>
-        <span className="by">{e.extractor === 'llm' ? 'LLM 추출·검증' : e.extractor === 'rule' ? '규칙 추출' : '큐레이션'}</span>
+        <span className="by">{e.extractor === 'curated' ? '큐레이션' : '추출 후보 · 사람 검토 필요'}</span>
       </div>
       {e.quote && <blockquote>“{e.quote}”</blockquote>}
       <a href={e.url} target="_blank" rel="noreferrer" className="small"><Icon name="doc" size={11} /> {e.evidenceTitle}</a>

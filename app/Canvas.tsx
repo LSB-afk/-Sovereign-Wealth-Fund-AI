@@ -3,6 +3,7 @@ import { fmtPct, fmtUsdB } from '@/lib/financials.ts';
 import { relationshipLabel } from '@/lib/labels.ts';
 import type { AnalysisResult, CandidateRecord, Stage } from '@/lib/types.ts';
 import { Icon } from './ui';
+import { canCompare } from '@/lib/publication.ts';
 
 export const STAGES: { key: Stage; label: string; sub: string; icon: string }[] = [
   { key: 'collect', label: '자료 수집', sub: '공시·프로필·원문 발췌', icon: 'search' },
@@ -135,7 +136,7 @@ export default function Canvas({ robust, r, target, shorts, stages, peers, selec
             <Node
               key={t} {...peerPos[i]} icon="chip" title={t}
               sub={`${shorts[t] ?? ''} · ${c.review ? relationshipLabel[c.review.relationship] : '직접 추가'}`}
-              tag={named ? { text: '10-K 경쟁사 기재' } : !r!.selected.includes(t) ? { text: '직접 추가', tone: 'gray' } : undefined}
+              tag={named ? { text: '공시 발췌에 기업명' } : !r!.selected.includes(t) ? { text: '직접 추가', tone: 'gray' } : undefined}
               chips={chipsOf(c)} badge={robust[t]}
               selected={selected === t} onClick={() => onSelect(t)}
               action={{ label: `${t} 제외`, icon: 'x', onClick: () => onToggle(t) }}
@@ -152,7 +153,7 @@ export default function Canvas({ robust, r, target, shorts, stages, peers, selec
               icon="chip" title={c.ticker} sub={shorts[c.ticker] ?? ''} state="muted" badge={blocked ? undefined : robust[c.ticker]}
               tag={blocked ? { text: '재무 비교 불가', tone: 'red' } : hold ? { text: '판단 보류', tone: 'gray' } : undefined}
               selected={selected === c.ticker} onClick={() => onSelect(c.ticker)}
-              action={blocked ? undefined : { label: `${c.ticker} 추가`, icon: 'plus', onClick: () => onToggle(c.ticker) }}
+              action={!canCompare(c) ? undefined : { label: `${c.ticker} 추가`, icon: 'plus', onClick: () => onToggle(c.ticker) }}
             />
           );
         })}

@@ -8,8 +8,10 @@ import Canvas, { STAGES } from './Canvas';
 import { CompareView, LogView, NotesView, ReasonsView, SourcesView, notesOf } from './Views';
 import { GraphView, RobustView, TimelineView } from './Insights';
 import { GoSource, Icon, Src, download } from './ui';
+import TrustView from './Trust';
+import { canCompare } from '@/lib/publication.ts';
 
-type View = 'map' | 'compare' | 'reasons' | 'robust' | 'timeline' | 'graph' | 'sources' | 'notes' | 'log';
+type View = 'map' | 'compare' | 'reasons' | 'robust' | 'timeline' | 'graph' | 'sources' | 'notes' | 'log' | 'trust';
 const TABS: { key: View; label: string; icon: string }[] = [
   { key: 'map', label: '지도', icon: 'map' },
   { key: 'compare', label: '비교표', icon: 'table' },
@@ -18,6 +20,7 @@ const TABS: { key: View; label: string; icon: string }[] = [
   { key: 'timeline', label: '시점 비교', icon: 'clock' },
   { key: 'graph', label: '지식그래프', icon: 'graph' },
   { key: 'sources', label: '출처', icon: 'doc' },
+  { key: 'trust', label: '신뢰성·기록', icon: 'shield' },
 ];
 
 const NEEDS_RESULT = new Set<View>(['compare', 'reasons', 'robust', 'sources']);
@@ -86,8 +89,17 @@ export default function App({ realAvailable, snapshotDate, targets, names, short
     else if (e.type === 'result') { setResult(e.result); setPeers(e.result.selected); setSelected(e.result.target); }
   }
 
+  function loadResult(r: AnalysisResult) {
+    setResult(r); setTarget(r.target); setAsOf(r.asOf); setMode(r.mode); setPeers(r.selected);
+    setSelected(r.target); setChanges([]); setError(null); setNotices([]); setStages({});
+  }
+
   function togglePeer(t: string, silent = false) {
     const add = !peers.includes(t);
+    if (add && !result?.candidates.some((c) => c.ticker === t && canCompare(c))) {
+      showToast({ text: '게시 검사와 재무 비교 조건을 통과한 후보만 추가할 수 있어요.' });
+      return;
+    }
     const change: PeerChange = { ticker: t, action: add ? 'add' : 'remove', at: new Date().toLocaleString('ko-KR') };
     setPeers((p) => (add ? [...p, t] : p.filter((x) => x !== t)));
     setChanges((c) => [...c, change]);
@@ -147,7 +159,7 @@ export default function App({ realAvailable, snapshotDate, targets, names, short
               <span className="ri"><Icon name="calendar" size={14} /></span>
               <input type="date" value={asOf} max={today} onChange={(e) => setAsOf(e.target.value)} disabled={running} />
             </label>
-            <p className="tiny">이 날짜 이후 공시는 사용하지 않아요.{mode === 'demo' && asOf > snapshotDate && ` 데모 스냅샷(${snapshotDate}) 이후 공시도 없어요.`}</p>
+            <p className="tiny">재무자료는 이 날짜 이전 공시를 사용해요. 제품·시장 태그는 현재 큐레이션이에요.{mode === 'demo' && asOf > snapshotDate && ` 스냅샷(${snapshotDate}) 이후 공시는 없어요.`}</p>
             <div className="sec"><span>실행 모드</span><em>2</em></div>
             <div className="cardlist">
               <button className={`row ${mode === 'demo' ? 'on' : ''}`} onClick={() => setMode('demo')} disabled={running}>
@@ -164,8 +176,8 @@ export default function App({ realAvailable, snapshotDate, targets, names, short
             <button className="primary" onClick={start} disabled={running || !asOf}>{running ? '분석 중…' : '분석 시작'}</button>
             <div className="sec"><span>연결한 데이터</span><em>2</em></div>
             <div className="cardlist">
-              <div className="row static"><span className="ri"><Icon name="doc" size={14} /></span><span className="rt"><b>SEC EDGAR</b><small>공시·XBRL 재무</small></span><span className="rr link">{mode === 'demo' ? '스냅샷' : '연결됨'}</span></div>
-              <div className="row static"><span className="ri spark"><Icon name="spark" size={14} /></span><span className="rt"><b>Claude</b><small>판단 에이전트</small></span><span className={`rr ${realAvailable ? 'link' : ''}`}>{realAvailable ? '연결됨' : '키 없음'}</span></div>
+              <div className="row static"><span className="ri"><Icon name="doc" size={14} /></span><span className="rt"><b>SEC EDGAR</b><small>공시·XBRL 재무</small></span><span className="rr link">{mode === 'demo' ? '스냅샷' : '실행 시 조회'}</span></div>
+              <div className="row static"><span className="ri spark"><Icon name="spark" size={14} /></span><span className="rt"><b>Claude</b><small>판단 에이전트</small></span><span className={`rr ${realAvailable ? 'link' : ''}`}>{realAvailable ? '설정됨' : '키 없음'}</span></div>
             </div>
           </aside>
         )}
@@ -209,6 +221,12 @@ export default function App({ realAvailable, snapshotDate, targets, names, short
           <div className="stage-area">
             {error && <div className="banner err">오류: {error}{mode === 'real' && ' · 데모 결과로 대체하지 않았어요.'}</div>}
             {notices.map((n, i) => <div key={i} className="banner warn">{n}</div>)}
+            {result && <div className={`banner ${result.reliability.status === 'passed' ? '' : 'warn'}`}>
+              <button className="link" onClick={() => setView('trust')}>{result.reliability.status === 'passed' ? '게시 검사 통과 · 사람 검토 필요' : `추가 검토 필요 · 검사 미통과/미검토 ${result.reliability.held}개`}</button>
+              <span> · 숫자·설명은 데이터로 구성 · AI 자유 문장 미게시</span>
+            </div>}
+
+            {view === 'trust' && <div className="sheets"><TrustView result={result} edited={edited} onLoad={loadResult} /></div>}
 
             {view === 'map' && <Canvas robust={robust} r={result} target={result?.target ?? target} shorts={shorts} stages={stages} peers={peers} selected={selected} onSelect={setSelected} onToggle={(t) => togglePeer(t)} zoom={zoom} />}
             {(view === 'timeline' || view === 'graph') && (
@@ -217,7 +235,7 @@ export default function App({ realAvailable, snapshotDate, targets, names, short
                 {view === 'graph' && <GraphView asOf={result?.asOf ?? asOf} mode={result?.mode ?? mode} focus={result?.target ?? target} />}
               </div>
             )}
-            {result && view !== 'map' && view !== 'timeline' && view !== 'graph' && (
+            {result && view !== 'map' && view !== 'timeline' && view !== 'graph' && view !== 'trust' && (
               <div className="sheets">
                 {view === 'compare' && <CompareView r={result} peers={peers} />}
                 {view === 'reasons' && <ReasonsView r={result} peers={peers} />}
@@ -248,7 +266,7 @@ export default function App({ realAvailable, snapshotDate, targets, names, short
                   {sel.ticker === result.target ? result.summary : sel.review?.reason ?? '에이전트 검토 없음'}
                 </span>
                 {sel.ticker !== result.target && <Src ids={sel.review?.sourceIds} sources={result.sources} />}
-                {sel.ticker !== result.target && !sel.issues?.some((i) => i.level === 'block') && (
+                {sel.ticker !== result.target && (peers.includes(sel.ticker) || canCompare(sel)) && (
                   <button className="btn" onClick={() => togglePeer(sel.ticker)}>{peers.includes(sel.ticker) ? '비교에서 빼기' : '비교에 추가'}</button>
                 )}
                 <span className="nav">

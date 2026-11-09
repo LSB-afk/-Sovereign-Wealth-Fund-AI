@@ -8,11 +8,11 @@ import { Src } from './ui';
 
 const CRITERIA = Object.keys(criterionLabel) as CriterionKey[];
 
-function Bar({ value, max, text, src, sources }: { value: number | null; max: number; text: string; src?: string; sources: Source[] }) {
+function Bar({ value, max, text, src, sources }: { value: number | null; max: number; text: string; src?: string | string[]; sources: Source[] }) {
   return (
     <td className="barcell">
       <div className="bar-track">{value != null && max > 0 && <div className={value < 0 ? 'neg' : ''} style={{ width: `${Math.max(2, (Math.abs(value) / max) * 100)}%` }} />}</div>
-      <span className={value == null ? 'missing' : ''}>{text}</span> <Src ids={[src]} sources={sources} />
+      <span className={value == null ? 'missing' : ''}>{text}</span> <Src ids={Array.isArray(src) ? src : [src]} sources={sources} />
     </td>
   );
 }
@@ -32,8 +32,8 @@ export function CompareView({ r, peers }: { r: AnalysisResult; peers: string[] }
               <tr key={x.ticker} className={x.role === '대상' ? 'target' : x.role === '중앙값' ? 'median' : ''}>
                 <th>{x.ticker}{x.role === '대상' && <small> 대상</small>}</th>
                 <Bar value={x.revenue} max={maxOf('revenue')} text={fmtUsdB(x.revenue)} src={x.src.revenue} sources={S} />
-                <Bar value={x.revenueGrowth} max={maxOf('revenueGrowth')} text={fmtPct(x.revenueGrowth)} src={x.src.revenue} sources={S} />
-                <Bar value={x.operatingMargin} max={maxOf('operatingMargin')} text={fmtPct(x.operatingMargin)} src={x.src.operatingIncome} sources={S} />
+                <Bar value={x.revenueGrowth} max={maxOf('revenueGrowth')} text={fmtPct(x.revenueGrowth)} src={x.derivedSrc?.revenueGrowth} sources={S} />
+                <Bar value={x.operatingMargin} max={maxOf('operatingMargin')} text={fmtPct(x.operatingMargin)} src={x.derivedSrc?.operatingMargin} sources={S} />
               </tr>
             ))}
           </tbody>
@@ -49,7 +49,7 @@ export function CompareView({ r, peers }: { r: AnalysisResult; peers: string[] }
                 <td><b>{x.ticker}</b></td><td>{x.period}</td>
                 <td>{fmtUsdB(x.revenue)} <Src ids={[x.src.revenue]} sources={S} /></td>
                 <td>{fmtUsdB(x.operatingIncome)} <Src ids={[x.src.operatingIncome]} sources={S} /></td>
-                <td>{fmtPct(x.rndRatio)} <Src ids={[x.src.rnd]} sources={S} /></td>
+                <td>{fmtPct(x.rndRatio)} <Src ids={x.derivedSrc?.rndRatio} sources={S} /></td>
               </tr>
             ))}
           </tbody>
@@ -70,7 +70,7 @@ export function ReasonsView({ r, peers }: { r: AnalysisResult; peers: string[] }
         <p>{r.summary}</p>
       </div>
       <div className="sheet">
-        <h3>후보별 판단표 <span>판단 작성: {r.mode === 'demo' ? '규칙 기반 정책(데모)' : 'Claude(도구 결과 기반)'}</span></h3>
+        <h3>후보별 판단표 <span>선정 제안: {r.mode === 'demo' ? '규칙 정책(데모)' : 'Claude'} · 수치·설명·기준 판정: 코드 구성</span></h3>
         <div className="scroll">
           <table className="grid">
             <thead><tr><th>후보</th><th>판단</th><th>이유</th>{CRITERIA.map((k) => <th key={k}>{criterionLabel[k]}</th>)}<th>참고 점수</th></tr></thead>

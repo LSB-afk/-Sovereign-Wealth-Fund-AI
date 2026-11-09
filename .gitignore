@@ -9,3 +9,4 @@ next-env.d.ts
 .omc/
 .omx/
 .DS_Store
+.local/

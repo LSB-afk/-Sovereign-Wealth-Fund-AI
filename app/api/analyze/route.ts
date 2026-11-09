@@ -3,18 +3,22 @@ import path from 'node:path';
 import { DEFAULT_LIMITS, RulePolicy, runAgent } from '@/lib/agent.ts';
 import { companies, liveSource, snapshotSource } from '@/lib/datasource.ts';
 import { LlmPolicy } from '@/lib/llm.ts';
+import { saveRun } from '@/lib/runs.ts';
+import { isDate, sameOrigin } from '@/lib/validation.ts';
 import type { AgentEvent, Mode } from '@/lib/types.ts';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
 
 export async function POST(req: Request) {
+  if (!sameOrigin(req)) return Response.json({ error: '다른 사이트에서 실행할 수 없습니다.' }, { status: 403 });
   const body = await req.json().catch(() => ({}));
+  if (!body || typeof body !== 'object' || !['demo', 'real'].includes(body.mode)) return Response.json({ error: '실행 모드는 demo 또는 real이어야 합니다.' }, { status: 400 });
   const target = String(body.target ?? '');
   const asOf = String(body.asOf ?? '');
   const mode: Mode = body.mode === 'real' ? 'real' : 'demo';
   if (!companies().targets.includes(target)) return Response.json({ error: `지원 대상이 아님: ${target}` }, { status: 400 });
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(asOf) || Number.isNaN(Date.parse(asOf))) return Response.json({ error: '분석 기준일 형식 오류 (YYYY-MM-DD)' }, { status: 400 });
+  if (!isDate(asOf)) return Response.json({ error: '분석 기준일 형식 오류 (유효한 YYYY-MM-DD)' }, { status: 400 });
   const today = new Date().toISOString().slice(0, 10);
   if (asOf > today) return Response.json({ error: '분석 기준일은 오늘 이후일 수 없음' }, { status: 400 });
   // Real mode never falls back to demo silently.
@@ -44,7 +48,8 @@ export async function POST(req: Request) {
           policy: mode === 'demo' ? new RulePolicy() : new LlmPolicy(limits.maxRetries, limits.maxToolCalls),
         });
         result.warnings.unshift(...warnings);
-        emit({ type: 'result', result });
+        const stored = await saveRun(result);
+        emit({ type: 'result', result: stored.result });
       } catch (e) {
         emit({ type: 'error', message: (e as Error).message });
       }

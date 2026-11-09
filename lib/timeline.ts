@@ -1,5 +1,5 @@
-// Time machine: re-run the same (rule) agent at several past analysis dates. Each run only sees filings published
-// on/before its date, so the change in the peer set is look-ahead free.
+// Re-run the same rule agent with financial filings published on/before each analysis date.
+// Curated company profiles/tags use their current values and are not versioned by date, so this is not a point-in-time backtest.
 import { RulePolicy, runAgent } from './agent.ts';
 import type { DataSource } from './datasource.ts';
 import type { Decision } from './types.ts';

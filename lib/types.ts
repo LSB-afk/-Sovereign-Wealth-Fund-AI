@@ -125,7 +125,27 @@ export interface Review {
   reason: string;
   sourceIds: string[];
   author: 'llm' | 'rule';
-  warnings: string[]; // e.g. unverified numbers in LLM text, dropped source ids
+  warnings: string[]; // Publication-gate failures; failed model prose is not included.
+  verification: {
+    status: 'passed' | 'held';
+    checks: EvidenceCheck[];
+  };
+}
+
+export type ReviewInput = Omit<Review, 'author' | 'warnings' | 'verification'>;
+
+export interface EvidenceCheck {
+  code: string;
+  message: string;
+  ticker?: string;
+}
+
+export interface ReliabilityReport {
+  policyVersion: string;
+  status: 'passed' | 'review_required';
+  checks: EvidenceCheck[];
+  held: number;
+  published: number;
 }
 
 export interface RuleScore {
@@ -153,6 +173,7 @@ export interface ToolLogEntry {
 }
 
 export interface AnalysisResult {
+  runId?: string;
   mode: Mode;
   modeLabel: string;
   target: string;
@@ -170,6 +191,7 @@ export interface AnalysisResult {
   warnings: string[];
   limits: Limits;
   dataNote: string;
+  reliability: ReliabilityReport;
 }
 
 export interface Limits {

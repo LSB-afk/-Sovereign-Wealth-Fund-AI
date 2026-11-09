@@ -71,10 +71,13 @@ export function snapshotSource(dir = path.join(DATA, 'snapshot')): DataSource {
 }
 
 // ponytail: in-process cache only, lost on restart; add a disk cache if EDGAR latency hurts.
-const liveCache = new Map<string, Promise<unknown>>();
+const liveCache = new Map<string, { expiresAt: number; value: Promise<unknown> }>();
 function cached<T>(key: string, fn: () => Promise<T>): Promise<T> {
-  if (!liveCache.has(key)) liveCache.set(key, fn().catch((e) => { liveCache.delete(key); throw e; }));
-  return liveCache.get(key) as Promise<T>;
+  const hit = liveCache.get(key);
+  if (hit && hit.expiresAt > Date.now()) return hit.value as Promise<T>;
+  const value = fn().catch((e) => { if (liveCache.get(key)?.value === value) liveCache.delete(key); throw e; });
+  liveCache.set(key, { expiresAt: Date.now() + 5 * 60_000, value });
+  return value;
 }
 
 export function liveSource(): DataSource {

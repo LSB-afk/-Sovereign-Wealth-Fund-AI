@@ -157,19 +157,22 @@ test('every reported number links to a collected source with matching URL', asyn
   }
 });
 
-test('save_review drops unknown source ids, rejects unsupported selections', async () => {
+test('save_review holds unsupported selections and rejects target/self reviews', async () => {
   const ctx = new Ctx('NVDA', '2026-11-07', snap);
   await ctx.financials('NVDA'); await ctx.financials('AMD');
   const j = (ids: string[]) => ({ assessment: 'similar' as const, note: '', sourceIds: ids });
   const crit = (ids: string[]) => ({ product: j(ids), customers: j([]), scale: j([]), growthProfitability: j([]), dataSufficiency: j([]) });
-  assert.throws(() => saveReview(ctx, { ticker: 'AMD', decision: 'selected', relationship: 'both', criteria: crit(['S999']), reason: '', sourceIds: ['made-up'] }, 'llm'), ToolInputError);
-  const ok = saveReview(ctx, { ticker: 'AMD', decision: 'selected', relationship: 'both', criteria: crit(['S1', 'S999']), reason: 'AMD 매출 성장률 34.3%, 99.9% 이익률', sourceIds: [] }, 'llm');
+  saveReview(ctx, { ticker: 'AMD', decision: 'selected', relationship: 'both', criteria: crit(['S999']), reason: '', sourceIds: ['made-up'] }, 'llm');
+  assert.equal(ctx.rec('AMD').review!.decision, 'hold');
+  saveReview(ctx, { ticker: 'AMD', decision: 'selected', relationship: 'both', criteria: crit(['S1', 'S999']), reason: 'AMD 매출 성장률 34.3%, 99.9% 이익률', sourceIds: [] }, 'llm');
   const rev = ctx.rec('AMD').review!;
-  assert.deepEqual(rev.criteria.product.sourceIds, ['S1']);
-  assert.ok(ok.data.warnings.some((w) => w.includes('S999')));
-  assert.ok(ok.data.warnings.some((w) => w.includes('99.9%') && !w.includes('34.3%')));
+  assert.equal(rev.decision, 'hold');
+  assert.ok(rev.verification.checks.some((c) => c.code === 'unknown_source'));
+  assert.ok(rev.verification.checks.some((c) => c.code === 'unverified_number'));
+  assert.ok(!rev.reason.includes('99.9%'));
   ctx.rec('TSM').issues = [{ level: 'block', code: 'no_usgaap_data', message: 'IFRS' }];
-  assert.throws(() => saveReview(ctx, { ticker: 'TSM', decision: 'selected', relationship: 'none', criteria: crit(['S1']), reason: '', sourceIds: ['S1'] }, 'llm'), /차단/);
+  saveReview(ctx, { ticker: 'TSM', decision: 'selected', relationship: 'none', criteria: crit(['S1']), reason: '', sourceIds: ['S1'] }, 'llm');
+  assert.equal(ctx.rec('TSM').review!.decision, 'hold');
   assert.throws(() => saveReview(ctx, { ticker: 'NVDA', decision: 'excluded', relationship: 'none', criteria: crit([]), reason: '', sourceIds: [] }, 'llm'), /후보군/);
 });
 
